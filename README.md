@@ -32,7 +32,7 @@ All design choices are made to reflect the way bitwarden installer works.
 
 Here is an example how to supply ssl key and certificate.
 
-'''
+```
 - name: Bitwarden server
   hosts: bitwarden
   roles:
@@ -41,7 +41,7 @@ Here is an example how to supply ssl key and certificate.
     - { role: bitwarden,
       vaulted_ssl_priv_key: "{{ our_ssl_private_key }}",
       vaulted_ssl_crt: "{{ our_ssl_crt }}" }
-'''
+```
 
 ## License
 
