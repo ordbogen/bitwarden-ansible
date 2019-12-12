@@ -1,0 +1,15 @@
+---
+- name: restart Bitwarden
+  command: ./bitwarden.sh start
+  args:
+    chdir: "{{ bitwarden_target }}"
+  become: true
+  tags: bitwarden
+
+- name: rebuild Bitwarden
+  command: ./bitwarden.sh rebuild
+  args:
+    chdir: "{{ bitwarden_target }}"
+  become: true
+  notify: restart Bitwarden
+  tags: bitwarden

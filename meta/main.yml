@@ -1,0 +1,33 @@
+---
+galaxy_info:
+  role_name: bitwarden
+  author: Filip Široký
+  description: Bitwarden on-premise installation role.
+  company: Ordbogen A/S
+  issue_tracker_url: https://github.com/ordbogen/bitwarden-ansible/issues
+  license: GPLv3
+
+  min_ansible_version: 2.0
+
+  platforms:
+   - name: Debian
+     versions:
+     - all
+   - name: Ubuntu
+     versions:
+     - all
+   - name: CentOS
+     versions:
+     - all
+   - name: Fedora
+     versions:
+     - all
+
+  galaxy_tags:
+    - bitwarden
+    - onpremise
+    - web
+    - manager
+    - password
+    - security
+    - system

@@ -1,0 +1,199 @@
+---
+- name: install ansible module dependencies
+  pip:
+    name: pexpect
+    executable: pip3
+  tags:
+    - bitwarden
+    - bitwarden_dependency
+
+- name: create a Bitwarden directory
+  file:
+    path: "{{ bitwarden_target }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '2666'
+  tags:
+    - bitwarden
+    - bitwarden-install
+
+- name: get Bitwarden installation
+  get_url:
+    url: https://go.btwrdn.co/bw-sh
+    dest: "{{ bitwarden_target }}/bitwarden.sh"
+    mode: '0777'
+  tags:
+    - bitwarden
+    - bitwarden-install
+
+- name: inspect Bitwarden Installation
+  block:
+    - name: get present docker images
+      command: "docker images --format '{{ '{{' }} .Repository {{ '}}' }}'"
+      register: result
+      check_mode: false
+      changed_when: false
+
+    - name: get list of missing bitwarden images
+      set_fact:
+        bitwarden_missing_images: |
+          {%- set images = ['bitwarden/nginx', 'bitwarden/admin', 'bitwarden/mssql',
+                            'bitwarden/icons', 'bitwarden/identity', 'bitwarden/attachments',
+                            'bitwarden/api', 'bitwarden/web', 'bitwarden/events',
+                            'bitwarden/notifications', 'bitwarden/setup'] %}
+          {%- set present = [] %}
+          {%- for item in result.stdout_lines %}
+            {%- do present.append(item) %}
+          {%- endfor -%}
+          {{ images | difference(present) }}
+
+    - name: get present docker containers
+      command: "docker ps --format '{{ '{{' }} .Names {{ '}}' }}'"
+      register: result
+      check_mode: false
+      changed_when: false
+
+    - name: get list of missing bitwarden containers
+      set_fact:
+        bitwarden_missing_containers: |
+          {%- set containers =  ['bitwarden-nginx', 'bitwarden-admin', 'bitwarden-mssql',
+                            'bitwarden-icons', 'bitwarden-identity', 'bitwarden-attachments',
+                            'bitwarden-api', 'bitwarden-web', 'bitwarden-events',
+                            'bitwarden-notifications'] %}
+          {%- set present = [] %}
+          {%- for item in result.stdout_lines %}
+            {%- do present.append(item) %}
+          {%- endfor -%}
+          {{ containers | difference(present) }}
+
+    - name: check bwdata presence
+      stat:
+        path: "{{ bitwarden_target }}/bwdata"
+      register: bitwarden_bwdata
+  tags:
+    - bitwarden
+    - bitwarden-install
+
+- name: install Bitwarden
+  expect:
+    command: ./bitwarden.sh install
+    chdir: "{{ bitwarden_target }}"
+    responses:
+      "Enter the domain name": "{{ bitwarden_domain | default('') }}\n"
+      "Do you want to use Let's Encrypt to generate a free SSL certificate?": "n\n"
+      "Enter your installation id": "{{ vaulted_instalation_id }}\n"
+      "Enter your installation key": "{{ vaulted_instalation_key }}\n"
+      "Do you have a SSL certificate to use?": "{{ 'y' if bitwarden_use_ssl and not bitwarden_generate_ssl else 'n' }}\n"
+      "Do you want to generate a self-signed SSL certificate?": "{{ 'y' if bitwarden_generate_ssl else 'n' }}\n"
+      "Is this a trusted SSL certificate (requires ca.crt, see docs)?": "n\n"
+  register: install_output
+  failed_when:
+    - install_output.rc != 0
+    - '"Looks like Bitwarden is already installed at {{ bitwarden_target }}/bwdata."
+      not in install_output.stdout_lines'
+  when:
+    - not bitwarden_missing_images | length == 0 or
+      not bitwarden_missing_containers | length == 0 or
+      not bitwarden_bwdata.stat.exists
+  notify: restart Bitwarden
+  tags:
+    - bitwarden
+    - bitwarden-install
+
+- debug:
+    var: vaulted_ssl_priv_key
+  tags:
+    - bitwarden
+    - bitwarden-install
+
+- name: get ssl certificate
+  block:
+    - name: create a ssl directory
+      file:
+        path: "{{ bitwarden_target }}/bwdata/ssl/{{ bitwarden_domain | default('localhost') }}"
+        state: directory
+        mode: '2755'
+
+    - name: copy certificates to {{ bitwarden_target }}/bwdata/ssl/{{ bitwarden_domain | default('localhost') }} folder
+      copy:
+        content: "{{ item.content }}"
+        dest: "{{ item.dest }}"
+        owner: nobody
+        group: nogroup
+        mode: "{{ item.mode }}"
+      with_items:
+        - content: "{{ bitwarden_ssl_private_key }}"
+          dest: "{{ bitwarden_target }}/bwdata/ssl/{{ bitwarden_domain | default('localhost') }}/private.key"
+          mode: "644"
+        - content: "{{ bitwardeb_ssl_crt }}"
+          dest: "{{ bitwarden_target }}/bwdata/ssl/{{ bitwarden_domain | default('localhost') }}/certificate.crt"
+          mode: "400"
+      loop_control:
+        label: "{{ item.dest }}"
+      no_log: true
+      notify:
+        - rebuild Bitwarden
+  when:
+    - bitwarden_use_ssl
+    - not bitwarden_generate_ssl
+  tags:
+    - bitwarden
+    - bitwarden-ssl
+
+- name: override global environment file
+  block:
+    - replace:
+        path: "{{ bitwarden_target }}/bwdata/env/global.override.env"
+        regexp: '^(.*)http(s?)://(.+)(/.*)$'
+        replace: '\1{{ "https" if bitwarden_use_ssl else "http" }}://{{ bitwarden_domain }}\4'
+      notify: rebuild Bitwarden
+    - replace:
+        path: "{{ bitwarden_target }}/bwdata/env/global.override.env"
+        regexp: '^(.*)http(s?)://([^/]+)$'
+        replace: '\1{{ "https" if bitwarden_use_ssl else "http" }}://{{ bitwarden_domain }}'
+      notify: rebuild Bitwarden
+    - lineinfile:
+        path: "{{ bitwarden_target }}/bwdata/env/global.override.env"
+        state: present
+        regexp: '^{{ item.key }}='
+        line: '{{ item.key }}={{ item.value }}'
+      with_dict: '{{ global_env }}'
+      when: global_env | default({}) | list | length > 0
+      notify: rebuild Bitwarden
+  when:
+    - bitwarden_env_override is defined
+    - bitwarden_env_override
+  tags:
+    - bitwarden
+    - bitwarden-config
+    - bitwarden-env
+
+- name: write config file
+  template:
+    src: srv/bitwarden/bwdata/config.yml.j2
+    dest: "{{ bitwarden_target }}/bwdata/config.yml"
+  notify: rebuild Bitwarden
+  tags:
+    - bitwarden
+    - bitwarden-config
+
+- name: update Bitwarden
+  block:
+    - name: update install script
+      command: ./bitwarden.sh updateself
+      args:
+        chdir: "{{ bitwarden_target }}"
+      become: true
+    - name: update all images
+      command: ./bitwarden.sh update
+      args:
+        chdir: "{{ bitwarden_target }}"
+      notify: restart Bitwarden
+      become: true
+  when:
+    - bitwarden_update is defined
+    - bitwarden_update
+  tags:
+    - bitwarden
+    - bitwarden-update
