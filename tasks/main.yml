@@ -101,12 +101,6 @@
     - bitwarden
     - bitwarden-install
 
-- debug:
-    var: vaulted_ssl_priv_key
-  tags:
-    - bitwarden
-    - bitwarden-install
-
 - name: get ssl certificate
   block:
     - name: create a ssl directory
@@ -143,17 +137,20 @@
 
 - name: override global environment file
   block:
-    - replace:
+    - name: Correct URLs nonroot
+      replace:
         path: "{{ bitwarden_target }}/bwdata/env/global.override.env"
         regexp: '^(.*)http(s?)://(.+)(/.*)$'
         replace: '\1{{ "https" if bitwarden_use_ssl else "http" }}://{{ bitwarden_domain }}\4'
       notify: rebuild Bitwarden
-    - replace:
+    - name: Correct URL root
+      replace:
         path: "{{ bitwarden_target }}/bwdata/env/global.override.env"
         regexp: '^(.*)http(s?)://([^/]+)$'
         replace: '\1{{ "https" if bitwarden_use_ssl else "http" }}://{{ bitwarden_domain }}'
       notify: rebuild Bitwarden
-    - lineinfile:
+    - name: Change any setting
+      lineinfile:
         path: "{{ bitwarden_target }}/bwdata/env/global.override.env"
         state: present
         regexp: '^{{ item.key }}='
