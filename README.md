@@ -11,8 +11,8 @@ Ansible used is 2.8, but also lower versions could be sufficient.
 
 ## Updating
 
-when updating the role doesn't check if new version has been downloaded and
-therefore the tasks related to update always report changed state and restart
+When updating, the role doesn't check if new version has been downloaded and
+therefore the tasks related to update always reports changed state and restarts
 bitwarden.
 
 ## Notes
