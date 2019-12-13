@@ -4,7 +4,7 @@ Ansible role to install and configure Bitwarden on your own server with ansible.
 
 ## Platforms
 
-Developed and test on Debian 10. Should work with any Linux platform with
+Developed and tested on Debian 10. Should work with any Linux platform with
 docker and python3.
 
 Ansible used is 2.8, but also lower versions could be sufficient.
